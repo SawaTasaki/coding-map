@@ -1,0 +1,30 @@
+# ビルド生成物
+dist
+build
+coverage
+out
+
+# パッケージ管理
+node_modules
+pnpm-lock.yaml
+yarn.lock
+
+# IDEやOSの一時ファイル
+.vscode
+.DS_Store
+
+# Prettierで扱いたくないファイル
+**/*.html
+**/*.css
+**/*.yaml
+**/*.yml
+
+# テストスナップショット
+*.snap
+
+# 自動生成されたドキュメントなど
+docs/api/*
+public/
+
+# Git 管理外ファイル（ただし .gitignore にも記載されているはず）
+*.log

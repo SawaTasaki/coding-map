@@ -1,0 +1,10 @@
+.env
+.DS_Store
+
+react/node_modules/
+
+fastapi/__pycache__
+fastapi/fastapi_app/__pycache__/
+__pycache__/
+*.pyc
+*.pyo
