@@ -1,99 +1,102 @@
-import { useEffect, useState } from "react";
-import "./App.css";
+import React, { useEffect, useRef, useState } from "react";
+import japanMap from "./assets/日本地図.png";
 
-function App() {
-  const [posts, setPosts] = useState([]);
-  const [form, setForm] = useState({
-    title: "",
-    username: "",
-    text: "",
-  });
-  const BACKEND_ORIGIN = import.meta.env.VITE_BACKEND_ORIGIN;
+type LatLng = { latitude: number; longitude: number };
 
-  // 投稿一覧を取得
-  const fetchPosts = async () => {
-    const res = await fetch(`${BACKEND_ORIGIN}/posts`);
-    const data = await res.json();
-    setPosts(data);
+// 画像が表現している範囲（例：日本全域ざっくり）
+const JAPAN_BOUNDS = {
+  minLat: 25.0,  // 南端（沖縄あたり）
+  maxLat: 46.0,  // 北端（北海道あたり）
+  minLon: 122.0, // 西端
+  maxLon: 150.0, // 東端
+};
+
+function latLngToXY(
+  lat: number,
+  lon: number,
+  width: number,
+  height: number,
+  bounds = JAPAN_BOUNDS
+) {
+  // x: 左→右に増加、y: 上→下に増加（CSS座標）
+  const xNorm = (lon - bounds.minLon) / (bounds.maxLon - bounds.minLon);
+  const yNorm = (bounds.maxLat - lat) / (bounds.maxLat - bounds.minLat);
+  return {
+    x: xNorm * width,
+    y: yNorm * height,
   };
+}
 
+export default function JapanStaticMap({}: {}) {
+  const [points, setPoints] = useState<LatLng[]>([]);
+  const imgRef = useRef<HTMLImageElement | null>(null);
+  const [size, setSize] = useState({ w: 0, h: 0 });
+
+  // 位置データ取得
   useEffect(() => {
-    fetchPosts();
+    (async () => {
+      const res = await fetch("http://localhost:8000/locations/latlng");
+      const data: LatLng[] = await res.json();
+      setPoints(data);
+    })();
   }, []);
 
-  // 投稿フォームの送信
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    await fetch(`${BACKEND_ORIGIN}/posts`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(form),
-    });
-    setForm({ title: "", username: "", text: "" }); // フォーム初期化
-    fetchPosts(); // 再取得
-  };
-
-  // フォーム入力ハンドラ
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setForm((prev) => ({ ...prev, [name]: value }));
-  };
+  // 画像サイズの追従（レスポンシブ）
+  useEffect(() => {
+    const updateSize = () => {
+      const el = imgRef.current;
+      if (!el) return;
+      setSize({ w: el.clientWidth, h: el.clientHeight });
+    };
+    updateSize();
+    window.addEventListener("resize", updateSize);
+    return () => window.removeEventListener("resize", updateSize);
+  }, []);
 
   return (
-    <div style={{ padding: "2rem", maxWidth: "600px", margin: "0 auto" }}>
-      <h1>掲示板</h1>
-
-      {/* 投稿フォーム */}
-      <form onSubmit={handleSubmit} style={{ marginBottom: "2rem" }}>
-        <input
-          name="title"
-          value={form.title}
-          onChange={handleChange}
-          placeholder="タイトル"
-          required
-          style={{ display: "block", width: "100%", marginBottom: "0.5rem" }}
-        />
-        <input
-          name="username"
-          value={form.username}
-          onChange={handleChange}
-          placeholder="ユーザー名"
-          required
-          style={{ display: "block", width: "100%", marginBottom: "0.5rem" }}
-        />
-        <textarea
-          name="text"
-          value={form.text}
-          onChange={handleChange}
-          placeholder="本文"
-          required
-          rows={4}
-          style={{ display: "block", width: "100%", marginBottom: "0.5rem" }}
-        />
-        <button type="submit">投稿する</button>
-      </form>
-
-      {/* 投稿一覧 */}
-      {posts.map((post) => (
-        <div
-          key={post.id}
-          style={{
-            marginBottom: "1.5rem",
-            borderBottom: "1px solid #ccc",
-            paddingBottom: "1rem",
-          }}
-        >
-          <h2>{post.title}</h2>
-          <p>
-            <strong>{post.username}</strong>
-          </p>
-          <p>{post.text}</p>
-        </div>
-      ))}
+    <div
+      style={{
+        position: "relative",
+        width: "100%",
+        maxWidth: 800, // 好きな表示サイズ
+        margin: "0 auto",
+      }}
+    >
+      <img
+        ref={imgRef}
+        src={japanMap}
+        alt="Japan blank map"
+        style={{ width: "100%", height: "auto", display: "block" }}
+        onLoad={() => {
+          const el = imgRef.current;
+          if (el) setSize({ w: el.clientWidth, h: el.clientHeight });
+        }}
+      />
+      {/* マーカー群 */}
+      {size.w > 0 &&
+        points.map((p, i) => {
+          const { x, y } = latLngToXY(p.latitude, p.longitude, size.w, size.h);
+          // 範囲外はスキップ
+          if (x < 0 || x > size.w || y < 0 || y > size.h) return null;
+          return (
+            <div
+              key={i}
+              title={`${p.latitude.toFixed(4)}, ${p.longitude.toFixed(4)}`}
+              style={{
+                position: "absolute",
+                left: x,
+                top: y,
+                transform: "translate(-50%, -50%)",
+                width: 10,
+                height: 10,
+                borderRadius: "9999px",
+                background: "crimson",
+                boxShadow: "0 0 0 2px rgba(255,255,255,0.9)",
+                cursor: "pointer",
+              }}
+            />
+          );
+        })}
     </div>
   );
 }
-
-export default App;
