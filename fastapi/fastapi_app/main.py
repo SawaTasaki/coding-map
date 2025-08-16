@@ -1,12 +1,11 @@
 import os
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 
-from . import models, schemas, crud
+from . import models, schemas
 from .database import SessionLocal, engine
-from .models import Post
 
 load_dotenv()
 
@@ -31,10 +30,7 @@ def get_db():
     finally:
         db.close()
 
-@app.get("/posts", response_model=list[schemas.PostRead])
-def read_posts(db: Session = Depends(get_db)):
-    return crud.get_posts(db)
-
-@app.post("/posts", response_model=schemas.PostRead)
-def create_new_post(post: schemas.PostCreate, db: Session = Depends(get_db)):
-    return crud.create_post(db, post)
+@app.get("/locations/latlng", response_model=list[schemas.LatLng])
+def list_locations_latlng(db: Session = Depends(get_db)):
+    rows = db.query(models.Location.latitude, models.Location.longitude).all()
+    return [schemas.LatLng(latitude=lat, longitude=lon) for (lat, lon) in rows]
