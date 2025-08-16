@@ -29,6 +29,7 @@ function latLngToXY(
 
 export default function JapanStaticMap({}: {}) {
   const [points, setPoints] = useState<LatLng[]>([]);
+  const [scheduledEndAt, setScheduledEndAt] = useState<string>("");
   const imgRef = useRef<HTMLImageElement | null>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
 
@@ -53,6 +54,60 @@ export default function JapanStaticMap({}: {}) {
     return () => window.removeEventListener("resize", updateSize);
   }, []);
 
+  const handleLog = async () => {
+    if (!scheduledEndAt) {
+      alert("終了予定時刻を入力してください。");
+      return;
+    }
+    if (!("geolocation" in navigator)) {
+      alert("このブラウザは位置情報取得に対応していません。");
+      return;
+    }
+
+    // 入力されたローカル時刻をUTCに正規化（DB送信用など）
+    const scheduledIsoUtc = new Date(scheduledEndAt).toISOString();
+
+    // geolocation を Promise で扱う
+    const getPosition = (options?: PositionOptions) =>
+      new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, options);
+      });
+
+    try {
+      const pos = await getPosition({
+        enableHighAccuracy: true,
+        timeout: 10_000,
+        maximumAge: 0,
+      });
+      const { latitude, longitude, accuracy, altitude, heading, speed } = pos.coords;
+      const capturedAtIsoUtc = new Date(pos.timestamp).toISOString();
+
+      console.log("scheduled_end_at (local):", scheduledEndAt);       // 例: 2025-08-17T12:00
+      console.log("scheduled_end_at (ISO UTC):", scheduledIsoUtc);   // 例: 2025-08-17T03:00:00.000Z
+      console.log("browser location:", {
+        latitude,
+        longitude,
+        accuracy,       // m
+        altitude,       // null のこと多い
+        heading,        // null のこと多い
+        speed,          // null のこと多い
+        captured_at_utc: capturedAtIsoUtc,
+      });
+
+      // もし画面にも現在地マーカーを出したいなら、ここで state に入れて再描画すればOK
+      // setPoints([{ latitude, longitude }]); など
+    } catch (err: any) {
+      const code = err?.code;
+      const msg =
+        code === 1 ? "位置情報の許可が必要です（Permission denied）。" :
+        code === 2 ? "位置情報を取得できません（Position unavailable）。" :
+        code === 3 ? "位置情報の取得がタイムアウトしました。" :
+        "位置情報の取得で不明なエラーが発生しました。";
+      console.error(err);
+      alert(msg);
+    }
+  };
+
   return (
     <div
       style={{
@@ -62,6 +117,46 @@ export default function JapanStaticMap({}: {}) {
         margin: "0 auto",
       }}
     >
+
+      {/* 右上のフォームパネル */}
+      <div
+        style={{
+          position: "absolute",
+          right: 12,
+          top: 12,
+          zIndex: 10,
+          background: "rgba(255,255,255,0.95)",
+          padding: 12,
+          borderRadius: 8,
+          boxShadow: "0 4px 14px rgba(0,0,0,0.15)",
+          display: "flex",
+          gap: 8,
+          alignItems: "center",
+        }}
+      >
+        <label style={{ fontSize: 12 }}>
+          終了予定時刻
+          <input
+            type="datetime-local"
+            value={scheduledEndAt}
+            onChange={(e) => setScheduledEndAt(e.target.value)}
+            style={{ marginLeft: 6 }}
+          />
+        </label>
+        <button
+          onClick={handleLog}
+          style={{
+            padding: "6px 10px",
+            borderRadius: 6,
+            border: "1px solid #ddd",
+            background: "#f5f5f5",
+            cursor: "pointer",
+          }}
+        >
+          コンソール出力
+        </button>
+      </div>
+
       <img
         ref={imgRef}
         src={japanMap}
