@@ -29,6 +29,8 @@ function latLngToXY(
 
 export default function JapanStaticMap({}: {}) {
   const [points, setPoints] = useState<LatLng[]>([]);
+  const [current, setCurrent] = useState<LatLng | null>(null); // ← 追加：現在地表示用
+  const [isSaving, setIsSaving] = useState(false);             // ← 追加：送信中
   const [scheduledEndAt, setScheduledEndAt] = useState<string>("");
   const imgRef = useRef<HTMLImageElement | null>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
@@ -74,12 +76,16 @@ export default function JapanStaticMap({}: {}) {
       });
 
     try {
+      setIsSaving(true);
       const pos = await getPosition({
         enableHighAccuracy: true,
         timeout: 10_000,
         maximumAge: 0,
       });
       const { latitude, longitude, accuracy, altitude, heading, speed } = pos.coords;
+      const optimistic: LatLng = { latitude, longitude };
+      setCurrent(optimistic);
+
       const capturedAtIsoUtc = new Date(pos.timestamp).toISOString();
 
       console.log("scheduled_end_at (local):", scheduledEndAt);       // 例: 2025-08-17T12:00
@@ -96,6 +102,27 @@ export default function JapanStaticMap({}: {}) {
 
       // もし画面にも現在地マーカーを出したいなら、ここで state に入れて再描画すればOK
       // setPoints([{ latitude, longitude }]); など
+      const res = await fetch("http://localhost:8000/locations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          latitude,
+          longitude,
+          accuracy,
+          scheduled_end_at: scheduledIsoUtc,
+        }),
+      });
+
+      if (!res.ok) {
+        // 失敗したらロールバック
+        setCurrent(null);
+        const text = await res.text();
+        throw new Error(`POST /locations failed: ${res.status} ${text}`);
+      }
+
+      const saved = await res.json();
+      console.log("saved:", saved);
+
     } catch (err: any) {
       const code = err?.code;
       const msg =
@@ -105,7 +132,10 @@ export default function JapanStaticMap({}: {}) {
         "位置情報の取得で不明なエラーが発生しました。";
       console.error(err);
       alert(msg);
+    } finally {
+      setIsSaving(false);
     }
+
   };
 
   return (
@@ -145,15 +175,10 @@ export default function JapanStaticMap({}: {}) {
         </label>
         <button
           onClick={handleLog}
-          style={{
-            padding: "6px 10px",
-            borderRadius: 6,
-            border: "1px solid #ddd",
-            background: "#f5f5f5",
-            cursor: "pointer",
-          }}
+          disabled={isSaving}
+          style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #ddd", background: isSaving ? "#eee" : "#f5f5f5", cursor: isSaving ? "not-allowed" : "pointer" }}
         >
-          コンソール出力
+          {isSaving ? "保存中..." : "保存＆現在地表示"}
         </button>
       </div>
 
@@ -167,31 +192,23 @@ export default function JapanStaticMap({}: {}) {
           if (el) setSize({ w: el.clientWidth, h: el.clientHeight });
         }}
       />
-      {/* マーカー群 */}
-      {size.w > 0 &&
-        points.map((p, i) => {
-          const { x, y } = latLngToXY(p.latitude, p.longitude, size.w, size.h);
-          // 範囲外はスキップ
-          if (x < 0 || x > size.w || y < 0 || y > size.h) return null;
-          return (
-            <div
-              key={i}
-              title={`${p.latitude.toFixed(4)}, ${p.longitude.toFixed(4)}`}
-              style={{
-                position: "absolute",
-                left: x,
-                top: y,
-                transform: "translate(-50%, -50%)",
-                width: 10,
-                height: 10,
-                borderRadius: "9999px",
-                background: "crimson",
-                boxShadow: "0 0 0 2px rgba(255,255,255,0.9)",
-                cursor: "pointer",
-              }}
-            />
-          );
-        })}
+      {/* 既存のダミー点 */}
+      {size.w > 0 && points.map((p, i) => {
+        const { x, y } = latLngToXY(p.latitude, p.longitude, size.w, size.h);
+        if (x < 0 || x > size.w || y < 0 || y > size.h) return null;
+        return (
+          <div key={i} style={{ position: "absolute", left: x, top: y, transform: "translate(-50%, -50%)", width: 10, height: 10, borderRadius: 9999, background: "crimson", boxShadow: "0 0 0 2px rgba(255,255,255,0.9)" }} />
+        );
+      })}
+
+      {/* 現在地マーカー（色を変えて強調） */}
+      {size.w > 0 && current && (() => {
+        const { x, y } = latLngToXY(current.latitude, current.longitude, size.w, size.h);
+        if (x < 0 || x > size.w || y < 0 || y > size.h) return null;
+        return (
+          <div title="現在地" style={{ position: "absolute", left: x, top: y, transform: "translate(-50%, -50%)", width: 14, height: 14, borderRadius: 9999, background: "deepskyblue", boxShadow: "0 0 0 3px rgba(255,255,255,0.95)" }} />
+        );
+      })()}
     </div>
   );
 }
